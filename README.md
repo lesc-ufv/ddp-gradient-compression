@@ -4,8 +4,7 @@ Projeto experimental em Python 3 para estudar **treinamento distribuído síncro
 **PyTorch DistributedDataParallel (DDP)** e **`register_comm_hook()`**, inicialmente em CPUs
 com backend **Gloo**.
 
-O projeto foi estruturado para servir como base de pesquisa e para continuar a evolução com
-Codex. Ele contém:
+O projeto foi estruturado para servir como base de pesquisa e para continuar a evolução dos experimentos. Ele contém:
 
 - baseline DDP padrão (`dense`);
 - compressão FP16 usando hook oficial do PyTorch;
