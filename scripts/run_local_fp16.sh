@@ -15,5 +15,5 @@ torchrun \
   --nnodes=1 \
   --nproc-per-node=4 \
   -m ddp_gradient_compression.train \
-  --hook dense \
+  --hook fp16 \
   --download

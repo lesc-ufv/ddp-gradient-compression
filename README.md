@@ -170,7 +170,10 @@ ddp-gradient-compression/
 |
 +-- scripts/
 |   +-- run_local_dense.sh
+|   +-- run_local_fp16.sh
 |   +-- run_local_topk.sh
+|   +-- run_local_powersgd.sh
+|   +-- run_smoke_all.sh
 |   +-- run_multinode_example.sh
 |
 +-- tests/
@@ -277,14 +280,16 @@ em todos os nós e execute sem `--download`.
 Para validar DDP sem Internet, NFS ou download de dados:
 
 ```bash
-torchrun --standalone --nproc-per-node=2 \
-  -m ddp_gradient_compression.train \
-  --dataset synthetic \
-  --hook topk \
-  --topk-ratio 0.01 \
-  --train-subset 1024 \
-  --test-subset 512 \
-  --epochs 1
+./scripts/run_smoke_all.sh
+```
+
+O script executa, em sequência, os hooks `dense`, `fp16`, `topk` e `powersgd` com dois
+processos locais e uma época. A execução é interrompida imediatamente se qualquer modo falhar.
+O número de processos e os tamanhos dos subconjuntos podem ser sobrescritos:
+
+```bash
+NPROC_PER_NODE=4 TRAIN_SUBSET=2048 TEST_SUBSET=1024 \
+  ./scripts/run_smoke_all.sh
 ```
 
 O dataset sintético tem formato MNIST (`1x28x28`) e é gerado deterministicamente em cada rank.

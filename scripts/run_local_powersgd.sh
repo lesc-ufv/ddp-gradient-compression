@@ -15,5 +15,7 @@ torchrun \
   --nnodes=1 \
   --nproc-per-node=4 \
   -m ddp_gradient_compression.train \
-  --hook dense \
+  --hook powersgd \
+  --powersgd-rank 1 \
+  --powersgd-start-iter 10 \
   --download
