@@ -17,6 +17,8 @@ class EpochMetrics:
     dense_reference_mb_per_worker: float
     logical_payload_mb_per_worker: float | None
     logical_compression_ratio: float | None
+    backend: str = "gloo"
+    backend_mode: str = ""
 
 
 class CsvLogger:

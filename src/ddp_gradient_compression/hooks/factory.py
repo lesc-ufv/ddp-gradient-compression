@@ -6,8 +6,8 @@ from typing import Any, Callable
 import torch
 import torch.distributed as dist
 from torch.distributed.algorithms.ddp_comm_hooks import default_hooks
-from torch.distributed.algorithms.ddp_comm_hooks import powerSGD_hook as powerSGD
 
+from .powersgd import PowerSGDState, powersgd_hook
 from .topk import TopKState, topk_hook
 
 
@@ -23,6 +23,7 @@ class HookBundle:
     state: Any
     hook: CommHook
     topk_state: TopKState | None = None
+    powersgd_state: PowerSGDState | None = None
 
 
 def build_hook(
@@ -62,7 +63,7 @@ def build_hook(
         )
 
     if name == "powersgd":
-        state = powerSGD.PowerSGDState(
+        state = PowerSGDState(
             process_group=process_group,
             matrix_approximation_rank=powersgd_rank,
             start_powerSGD_iter=powersgd_start_iter,
@@ -72,7 +73,8 @@ def build_hook(
         return HookBundle(
             name=name,
             state=state,
-            hook=powerSGD.powerSGD_hook,
+            hook=powersgd_hook,
+            powersgd_state=state,
         )
 
     raise ValueError(f"Unknown hook: {name}")

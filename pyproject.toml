@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+plots = ["matplotlib>=3.8,<4"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

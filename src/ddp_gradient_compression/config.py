@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="PyTorch DDP gradient-compression laboratory."
     )
 
-    parser.add_argument("--backend", default="gloo", choices=["gloo", "nccl", "mpi"])
+    parser.add_argument("--backend", default="gloo", choices=["gloo", "nccl", "mpi", "accl"])
     parser.add_argument(
         "--hook",
         default="dense",

@@ -16,4 +16,5 @@ torchrun \
   --nproc-per-node=4 \
   -m ddp_gradient_compression.train \
   --hook fp16 \
-  --download
+  --download \
+  --epochs=10

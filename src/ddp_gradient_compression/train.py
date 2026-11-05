@@ -44,6 +44,7 @@ def logical_payload_for_epoch(
     num_parameters: int,
     steps: int,
     topk_state,
+    powersgd_state=None,
 ) -> tuple[int, int | None]:
     dense_reference_bytes = num_parameters * 4 * steps
 
@@ -57,10 +58,9 @@ def logical_payload_for_epoch(
         snapshot = topk_state.snapshot_and_reset()
         return snapshot.dense_bytes, snapshot.payload_bytes
 
-    # PowerSGD communication volume depends on per-parameter shapes and internal decisions.
-    # Do not report a misleading estimate.
     if hook_name == "powersgd":
-        return dense_reference_bytes, None
+        snapshot = powersgd_state.snapshot_and_reset()
+        return snapshot.dense_bytes, snapshot.payload_bytes
 
     raise ValueError(hook_name)
 
@@ -123,13 +123,15 @@ def train(config: TrainConfig) -> None:
             timestamp = time.strftime("%Y%m%d-%H%M%S")
             output_path = (
                 config.results_dir
-                / f"{timestamp}-{config.hook}-world{ctx.world_size}.csv"
+                / f"{timestamp}-{config.backend}{'-' + ctx.backend_mode if ctx.backend_mode else ''}-{config.hook}-world{ctx.world_size}.csv"
             )
             logger = CsvLogger(output_path)
 
             print("=" * 72)
             print("DDP Gradient Compression Lab")
             print(f"backend            : {config.backend}")
+            if ctx.backend_mode:
+                print(f"backend_mode       : {ctx.backend_mode}")
             print(f"hook               : {config.hook}")
             print(f"dataset            : {config.dataset}")
             print(f"world_size         : {ctx.world_size}")
@@ -190,6 +192,7 @@ def train(config: TrainConfig) -> None:
                 num_parameters=num_parameters,
                 steps=steps,
                 topk_state=hook_bundle.topk_state,
+                powersgd_state=hook_bundle.powersgd_state,
             )
 
             dense_mb = dense_bytes / (1024 ** 2)
@@ -221,6 +224,8 @@ def train(config: TrainConfig) -> None:
                     dense_reference_mb_per_worker=dense_mb,
                     logical_payload_mb_per_worker=payload_mb,
                     logical_compression_ratio=compression_ratio,
+                    backend=config.backend,
+                    backend_mode=ctx.backend_mode,
                 )
 
                 assert logger is not None

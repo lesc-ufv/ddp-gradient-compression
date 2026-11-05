@@ -22,7 +22,7 @@ for hook in dense fp16 topk powersgd; do
       hook_args+=(--topk-ratio 0.01)
       ;;
     powersgd)
-      hook_args+=(--powersgd-rank 1 --powersgd-start-iter 10)
+      hook_args+=(--powersgd-rank 1 --powersgd-start-iter 2)
       ;;
   esac
 

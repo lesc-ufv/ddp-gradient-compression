@@ -18,4 +18,5 @@ torchrun \
   --hook powersgd \
   --powersgd-rank 1 \
   --powersgd-start-iter 10 \
-  --download
+  --download \
+  --epochs=10

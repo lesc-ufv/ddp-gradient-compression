@@ -2,17 +2,18 @@
 
 Projeto experimental em Python 3 para estudar **treinamento distribuído síncrono (S-SGD)** com
 **PyTorch DistributedDataParallel (DDP)** e **`register_comm_hook()`**, inicialmente em CPUs
-com backend **Gloo**.
+com backend **Gloo** por padrão e backend **ACCL experimental** opcional.
 
 O projeto foi estruturado para servir como base de pesquisa e para continuar a evolução dos experimentos. Ele contém:
 
 - baseline DDP padrão (`dense`);
 - compressão FP16 usando hook oficial do PyTorch;
 - Top-K sparsification com **error feedback**;
-- PowerSGD usando o hook oficial do PyTorch;
+- PowerSGD com hook próprio em CPU + Gloo;
 - métricas de tempo, acurácia e payload lógico;
 - execução single-node e multi-node com `torchrun`;
 - testes unitários para o compressor Top-K;
+- backend ACCL opcional com adaptador PyACCL e configuração explícita por rank;
 - documentação da arquitetura e dos pontos de extensão para FPGA.
 
 > Objetivo principal: separar claramente **treinamento**, **compressão** e **comunicação**, para
@@ -285,6 +286,8 @@ Para validar DDP sem Internet, NFS ou download de dados:
 
 O script executa, em sequência, os hooks `dense`, `fp16`, `topk` e `powersgd` com dois
 processos locais e uma época. A execução é interrompida imediatamente se qualquer modo falhar.
+No smoke test, PowerSGD começa a comprimir após dois passos, para exercitar a
+compressão durante a época padrão. O padrão do treinamento continua sendo dez passos.
 O número de processos e os tamanhos dos subconjuntos podem ser sobrescritos:
 
 ```bash
@@ -652,7 +655,20 @@ tempo de comunicação
 
 ## 12.4 `powersgd`
 
-Usa a implementação oficial do PyTorch de PowerSGD.
+Usa a implementação própria em `hooks/powersgd.py`, registrada no DDP pela factory.
+Os primeiros `--powersgd-start-iter` passos usam all-reduce denso. Depois, cada
+matriz elegível é aproximada por `P Qᵀ`, com rank definido por `--powersgd-rank`.
+Vetores e matrizes sem economia de elementos continuam com comunicação densa.
+
+Os processos inicializam Q com a mesma semente, reduzem P, ortogonalizam P e
+reduzem Q. A reconstrução preserva a média entre os processos. O error feedback
+guarda o erro da projeção local antes da média; o warm start reaproveita Q.
+Mudanças no layout dos buckets invalidam os fatores e resíduos daquele bucket.
+As coletivas são assíncronas, encadeadas por callbacks sem barreiras ou espera
+bloqueante em futures pendentes. Os pipelines dos buckets são encadeados para
+garantir a mesma ordem das coletivas em todos os processos; isso limita a
+sobreposição da comunicação entre buckets. Não há chamada a `torch.cuda.synchronize`.
+O hook suporta buckets FP32/FP64; não é uma cópia exata do hook oficial.
 
 Exemplo:
 
@@ -777,6 +793,8 @@ epoch_seconds
 dense_reference_mb_per_worker
 logical_payload_mb_per_worker
 logical_compression_ratio
+backend
+backend_mode
 ```
 
 Para `Top-K`, o payload é contado a partir dos buckets efetivamente processados pelo hook.
@@ -784,9 +802,60 @@ Para `Top-K`, o payload é contado a partir dos buckets efetivamente processados
 Para `dense` e `fp16`, o projeto calcula uma referência lógica a partir do número de parâmetros
 e do número de passos.
 
-Para PowerSGD, o projeto não tenta inferir os bytes reais do algoritmo interno; o campo pode
-ficar vazio. Para estudo rigoroso de PowerSGD, instrumente explicitamente as operações do hook
-ou use profiling de rede.
+Para `PowerSGD`, a contagem também vem dos buckets efetivamente processados.
+Durante o aquecimento, conta o bucket denso completo. Após o aquecimento, soma
+os bytes dos fatores P e Q e dos tensores enviados sem compressão. Cada tensor
+é contado uma vez por coletiva, usando seu tamanho e dtype, por worker.
+A referência densa corresponde aos buckets originais; a razão é referência/payload.
+Os contadores são zerados ao final de cada época, sem apagar resíduos ou fatores.
+Esses números são payload lógico: não incluem retransmissões, cabeçalhos ou o
+custo do algoritmo de all-reduce na rede. Tráfego físico requer medição externa.
+
+---
+
+## Gerar gráficos de comparação
+
+Instale a dependência opcional e execute na raiz do projeto:
+
+```bash
+python -m pip install -e ".[plots]"
+python scripts/plot_results.py
+```
+
+Os caminhos padrão de entrada e saída são relativos à raiz do projeto, mesmo
+quando executado de dentro de `scripts/` com `python plot_results.py`.
+Caminhos fornecidos explicitamente são relativos ao diretório atual do terminal.
+
+O script seleciona o CSV válido mais recente por `(hook, backend, backend_mode, world_size)`,
+usando a data/hora no nome dos arquivos. Não combina épocas de execuções distintas.
+CSVs vazios ou inválidos são ignorados com uma mensagem. Os seis gráficos em
+`results/plots/` mostram loss de treino/teste, accuracy de teste, tempo por época,
+payload lógico por época, razão de compressão lógica e accuracy versus payload
+lógico acumulado por worker. O arquivo `selected_runs.json` registra os CSVs usados.
+
+Para comparar apenas execuções com quatro processos:
+
+```bash
+python scripts/plot_results.py --world-size 4
+```
+
+Para escolher exatamente as execuções (recomendado para experimentos controlados):
+
+```bash
+python scripts/plot_results.py results/EXECUCAO_DENSE.csv results/EXECUCAO_TOPK.csv \
+  results/EXECUCAO_POWERSGD.csv --output-dir results/comparacao
+```
+
+Use `--all-runs` para incluir todas as execuções da pasta, `--results-dir` para
+mudar a entrada e `--format svg` ou `--format pdf` para exportar em formato vetorial.
+O padrão é PNG; `--dpi 300` altera a resolução. Funciona sem interface gráfica.
+
+Os CSVs atuais não identificam dataset, subconjunto, batch size ou todos os
+hiperparâmetros. A seleção automática pode misturar smoke tests e treinos reais;
+confira os arquivos e compare configurações equivalentes. Métricas ausentes em
+CSVs antigos permanecem ausentes. Se houver payload desconhecido ou lacunas de
+épocas, aquela execução é omitida do gráfico acumulado, evitando somas incompletas.
+Redução de payload lógico não é medição de tráfego físico nem de speedup.
 
 ---
 
@@ -830,82 +899,36 @@ Depois repita múltiplas vezes para separar ruído de sistema de diferenças rea
 
 ---
 
-# 18. Caminho para FPGA
+# 18. Backend ACCL e caminho para FPGA
 
-A primeira integração deve preservar o restante do pipeline:
-
-```text
-DDP
- |
- v
-GradBucket
- |
- v
-comm hook
- |
- v
-CPU compressor
-```
-
-vira:
+A primeira integração escolhida é o **backend de comunicação ACCL**, selecionável
+por `--backend accl`. Gloo continua sendo o padrão e a referência CPU, utilizável
+sem dependências de FPGA. O modelo e os compressores continuam executando na CPU:
 
 ```text
-DDP
- |
- v
-GradBucket
- |
- v
-comm hook
- |
- v
-host -> FPGA DMA
- |
- v
-FPGA compressor
- |
- v
-FPGA -> host
- |
- v
-Gloo
+DDP CPU -> comm hook -> ProcessGroupACCL -> PyACCL -> U55C -> rede 100G
 ```
 
-O primeiro objetivo não deve ser remover Gloo. O objetivo é comparar:
+O backend atende às coletivas usadas pelo treinamento, incluindo broadcast dos
+parâmetros, all-reduce de gradientes/métricas, all-gather do Top-K e barreiras.
+O rendezvous dos hosts continua pelo TCPStore do PyTorch. Não há fallback
+silencioso de ACCL para Gloo.
 
-```text
-CPU compression
-vs
-FPGA compression
-```
+**Estado:** integração de software e testes de contrato com driver controlado.
+O hardware e o emulador oficial ainda precisam de validação. Para U55C é necessário
+um bitstream compatível e um adaptador de inicialização da rede específico do
+cluster; não basta instalar PyACCL ou indicar um xclbin.
 
-mantendo constante:
+Consulte [docs/accl.md](docs/accl.md) para dependências, limitações, configuração,
+execução em emulador e lançamento nos quatro nós. Arquivos fornecidos:
 
-```text
-DDP
-dataset
-modelo
-workers
-rede
-coletiva
-```
+- `configs/accl-emulator-2ranks.json`;
+- `configs/accl-u55c-4nodes.example.json`;
+- `scripts/run_multinode_accl.sh`.
 
-Depois é possível estudar uma segunda arquitetura:
-
-```text
-CPU
- |
- v
-FPGA
- |
- v
-compressão
- |
- v
-rede diretamente
-```
-
-reduzindo o retorno ao host.
+Uma evolução separada é mover o compressor para a FPGA. Isso pode ser avaliado
+com retorno do payload ao host e Gloo, ou com comunicação direta via ACCL. Manter
+compressão e comunicação separadas permite medir o benefício de cada etapa.
 
 ---
 
@@ -1073,13 +1096,13 @@ Tarefas naturais para as próximas etapas:
 3. implementar quantização INT8;
 4. implementar Top-K assíncrono com melhor overlap;
 5. adicionar benchmark de throughput;
-6. integrar PowerSGD aos relatórios;
+6. aprofundar o profiling de tempo e tráfego físico do PowerSGD;
 7. criar interface de runtime FPGA;
 8. adicionar mock FPGA para desenvolvimento sem hardware;
 9. medir PCIe/DMA;
 10. implementar execução via Slurm;
 11. coletar múltiplas repetições automaticamente;
-12. produzir gráficos de convergência vs bytes transmitidos.
+12. ampliar os gráficos de convergência com medições externas de tráfego físico.
 
 ---
 

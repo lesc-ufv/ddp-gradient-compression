@@ -1,0 +1,60 @@
+{
+  "mode": "hardware",
+  "protocol": "TCP",
+  "nbufs": 16,
+  "bufsize": 4096,
+  "timeout_s": 120,
+  "ranks": [
+    {
+      "ip": "192.0.2.10",
+      "port": 9000,
+      "session_id": 0,
+      "max_segment_size": 4096
+    },
+    {
+      "ip": "192.0.2.11",
+      "port": 9001,
+      "session_id": 1,
+      "max_segment_size": 4096
+    },
+    {
+      "ip": "192.0.2.12",
+      "port": 9002,
+      "session_id": 2,
+      "max_segment_size": 4096
+    },
+    {
+      "ip": "192.0.2.13",
+      "port": 9003,
+      "session_id": 3,
+      "max_segment_size": 4096
+    }
+  ],
+  "devices": [
+    {
+      "host": "node0",
+      "board_idx": 0,
+      "cclo_idx": 0,
+      "xclbin": "/opt/accl/u55c.xclbin"
+    },
+    {
+      "host": "node1",
+      "board_idx": 0,
+      "cclo_idx": 0,
+      "xclbin": "/opt/accl/u55c.xclbin"
+    },
+    {
+      "host": "node2",
+      "board_idx": 0,
+      "cclo_idx": 0,
+      "xclbin": "/opt/accl/u55c.xclbin"
+    },
+    {
+      "host": "node3",
+      "board_idx": 0,
+      "cclo_idx": 0,
+      "xclbin": "/opt/accl/u55c.xclbin"
+    }
+  ],
+  "driver_factory": "cluster_accl:create_driver"
+}

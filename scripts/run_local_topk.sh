@@ -17,4 +17,5 @@ torchrun \
   -m ddp_gradient_compression.train \
   --hook topk \
   --topk-ratio 0.01 \
-  --download
+  --download \
+  --epochs=10
